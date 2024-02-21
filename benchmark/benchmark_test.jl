@@ -1,14 +1,14 @@
 using WaterLily
 using BenchmarkTools
-using CUDA: CuArray, allowscalar
+using CUDA
 using KernelAbstractions: synchronize, get_backend
 using StaticArrays
 
-allowscalar(false)
 include("util.jl")
 
+# cases, log2p, max_steps, ftype, backend = ["tgv"], [(8,)], [50], [Float32], Array
 cases, log2p, max_steps, ftype, backend = parse_cla(ARGS;
-    cases=["tgv", "jelly"], log2p=[(6,7), (5,6)], max_steps=[100, 100], ftype=[Float32, Float32], backend=Array
+    cases=["tgv"], log2p=[(6,)], max_steps=[100], ftype=[Float32], backend=Array
 )
 
 # Define simulation benchmarks
@@ -47,15 +47,29 @@ function jelly(p, backend; Re=5e2, U=1, T=Float32)
 end
 
 # Generate benchmarks
+# function benchmark()
+#     for (case, p, s, ft) in zip(cases, log2p, max_steps, ftype)
+#         println("Benchmarking: $(case)")
+#         s = getf(case)(p[1], backend; T=ft)
+#         # sim_step!(s, typemax(ft); max_steps=2, verbose=false, remeasure=false)
+#         # @time sim_step!(s, typemax(ft); max_steps=10, verbose=false, remeasure=false)
+#         @btime sim_step!($s, typemax($ft); max_steps=10, verbose=false, remeasure=false) samples=1 evals=1
+#     end
+# end
+
 function benchmark()
     for (case, p, s, ft) in zip(cases, log2p, max_steps, ftype)
         println("Benchmarking: $(case)")
-        suite = BenchmarkGroup()
-        results = BenchmarkGroup([case, "sim_step!", p, s, ft, backend_str[backend], git_hash, string(VERSION)])
-        add_to_suite!(suite, getf(case); p=p, s=s, ft=ft, backend=backend) # create benchmark
-        results[backend_str[backend]] = run(suite[backend_str[backend]], samples=1, evals=1, seconds=1e6, verbose=true) # run!
-        fname = "$(case)_$(p...)_$(s)_$(ft)_$(backend_str[backend])_$(git_hash)_$VERSION.json"
-        BenchmarkTools.save(fname, results)
+        println("$(p),$(s),$(ft)")
+        sim = getf(case)(p[1], backend; T=ft)
+        sim_step!(sim, typemax(ft); max_steps=1, verbose=false, remeasure=false)
+        CUDA.@time sim_step!(sim, typemax(ft); max_steps=s, verbose=false, remeasure=false)
+        # @btime sim_step!($s, typemax($ft); max_steps=$s, verbose=false, remeasure=false) samples=1 evals=1
+
+        # for _ in 1:10
+        #     @time sim_step!(s, typemax(ft); max_steps=100, verbose=false, remeasure=false)
+        # end
+        # @time sim_step!(s, typemax(ft); max_steps=100, verbose=false, remeasure=false)
     end
 end
 

@@ -86,6 +86,9 @@ becomes
 
 where `get_backend` is used on the _first_ variable in `expr` (`a` in this example).
 """
+# workgroupsize(sizeR) = ntuple(j->j==argmax(sizeR) ? 64 : 1, length(sizeR))
+workgroupsize(R) = ntuple(j->j==argmax(size(R)) ? 64 : 1, ndims(R))
+# @inline workgroupsize(sizeR) = 64
 macro loop(args...)
     ex,_,itr = args
     _,I,R = itr.args; sym = []
@@ -99,9 +102,28 @@ macro loop(args...)
             @fastmath @inbounds $ex
         end
         # $kern(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
-        $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+        # $kern(get_backend($(sym[1])),workgroupsize(size($R)))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+        $kern(get_backend($(sym[1])),workgroupsize($R))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+        # $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
     end |> esc
 end
+# macro loop(args...)
+#     ex,_,itr = args
+#     _,I,R = itr.args; sym = []
+#     grab!(sym,ex)     # get arguments and replace composites in `ex`
+#     setdiff!(sym,[I]) # don't want to pass I as an argument
+#     @gensym kern      # generate unique kernel function name
+#     I0 = return quote $R[1]-oneunit($R[1]) end |> esc
+#     return quote
+#         function $kern($(rep.(sym)...)) # replace composite arguments
+#             for $I ∈ $R
+#                 $I += $I0
+#                 @fastmath @inbounds $ex
+#             end
+#         end
+#         $kern($(sym...))
+#     end |> esc
+# end
 function grab!(sym,ex::Expr)
     ex.head == :. && return union!(sym,[ex])      # grab composite name and return
     start = ex.head==:(call) ? 2 : 1              # don't grab function names
@@ -178,9 +200,9 @@ Apply a 1D convection scheme to fill the ghost cell on the exit of the domain.
 """
 function exitBC!(u,u⁰,U,Δt)
     N,_ = size_u(u)
-    exitR = slice(N.-1,N[1],1,2)              # exit slice excluding ghosts
+    exitR = slice(N.-1,N[1],1,2)                # exit slice excluding ghosts
     @loop u[I,1] = u⁰[I,1]-U[1]*Δt*(u⁰[I,1]-u⁰[I-δ(1,I),1]) over I ∈ exitR
-    ∮u = sum(u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
+    ∮u = sum(@views u[exitR,1])/length(exitR)-U[1]   # mass flux imbalance
     @loop u[I,1] -= ∮u over I ∈ exitR         # correct flux
 end
 """
