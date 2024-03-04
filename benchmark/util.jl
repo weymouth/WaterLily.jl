@@ -29,7 +29,7 @@ function add_to_suite!(suite, sim_function; p=(3,4,5), s=100, ft=Float32, backen
     for n in p
         sim = sim_function(n, backend; T=ft)
         suite[bstr][repr(n)] = BenchmarkGroup([repr(n)])
-        @add_benchmark sim_step!($sim, $typemax($ft); max_steps=$s, verbose=false, remeasure=false) $(get_backend(sim.flow.p)) suite[bstr][repr(n)] "sim_step!"
+        @add_benchmark sim_step!($sim, $typemax($ft); max_steps=$s, verbose=true, remeasure=false) $(get_backend(sim.flow.p)) suite[bstr][repr(n)] "sim_step!"
     end
 end
 

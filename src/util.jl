@@ -1,5 +1,5 @@
-using KernelAbstractions: get_backend, @index, @kernel
-
+using KernelAbstractions: get_backend, @index, @kernel, CPU, GPU
+using Polyester: @batch
 @inline CI(a...) = CartesianIndex(a...)
 """
     CIj(j,I,jj)
@@ -91,15 +91,24 @@ macro loop(args...)
     _,I,R = itr.args; sym = []
     grab!(sym,ex)     # get arguments and replace composites in `ex`
     setdiff!(sym,[I]) # don't want to pass I as an argument
-    @gensym kern      # generate unique kernel function name
+    @gensym(kern1, kern2)
     return quote
-        @kernel function $kern($(rep.(sym)...),@Const(I0)) # replace composite arguments
-            $I = @index(Global,Cartesian)
-            $I += I0
-            @fastmath @inbounds $ex
+        if typeof(get_backend($(sym[1]))) <: GPU
+            @kernel function $kern1($(rep.(sym)...),@Const(I0)) # replace composite arguments
+                $I = @index(Global,Cartesian)
+                $I += I0
+                @fastmath @inbounds $ex
+            end
+            $kern1(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+            # $kern1(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
+        elseif typeof(get_backend($(sym[1]))) <: CPU
+            function $kern2($(rep.(sym)...)) # replace composite arguments
+                @batch for $I ∈ $R
+                    @fastmath @inbounds $ex
+                end
+            end
+            $kern2($(sym...))
         end
-        # $kern(get_backend($(sym[1])),ntuple(j->j==argmax(size($R)) ? 64 : 1,length(size($R))))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R)) #problems...
-        $kern(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
     end |> esc
 end
 function grab!(sym,ex::Expr)
@@ -202,7 +211,7 @@ end
 """
     BCTuple(f,t,N)
 
-Generate a tuple of `N` values from either a boundary condition 
+Generate a tuple of `N` values from either a boundary condition
 function `f(i,t)` or the tuple of boundary conditions f=(fₓ,...).
 """
 BCTuple(f::Function,t,N)=ntuple(i->f(i,t),N)
