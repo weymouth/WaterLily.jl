@@ -88,3 +88,16 @@ end
     d,n,_ = measure(body,x,t)
     n*WaterLily.kern(clamp(d,-1,1))
 end
+# viscous stress tensor
+∇²u(I::CartesianIndex{2},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:2, j ∈ 1:2]
+∇²u(I::CartesianIndex{3},u) = @SMatrix [∂(i,j,I,u)+∂(j,i,I,u) for i ∈ 1:3, j ∈ 1:3]
+"""
+   ∮τnds(u::AbstractArray{T,N},df::AbstractArray{T},body::AbstractBody,t=0)
+
+Compute the viscous force on a immersed body. 
+"""
+function ∮τnds(u::AbstractArray{T,N},df::AbstractArray{T,N},body::AbstractBody,t=0) where {T,N}
+   Nu,_ = size_u(u); In = CartesianIndices(map(i->(2:i-1),Nu)) 
+   @loop df[I,:] .= ∇²u(I,u)*nds(body,loc(0,I,T),t) over I ∈ inside(In)
+   [sum(@inbounds(df[inside(In),i])) for i ∈ 1:N-1] |> Array
+end
