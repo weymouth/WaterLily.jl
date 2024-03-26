@@ -95,7 +95,7 @@ In this example, the `sdf` function defines a line segment from `-L/2 ≤ x[2] �
 
 One important thing to note here is the use of `StaticArrays` to define the `sdf` and `map`. This speeds up the simulation since it eliminates allocations at every grid cell and time step.
 
-### Circle inside an oscillating flow
+### [Circle inside an oscillating flow](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_oscillatingFlowOverCircle.jl)
 ![Oscillating flow](examples/oscillating.gif)
 
 This [example](examples/TwoD_oscillatingFlowOverCircle.jl) demonstrates a 2D oscillating periodic flow over a circle.
@@ -114,6 +114,127 @@ end
 The `g` argument accepts a function with direction (`i`) and time (`t`) arguments. This allows you to create a spatially uniform body force with variations over time. In this example, the function adds a sinusoidal force in the "x" direction `i=1`, and nothing to the other directions.
 
 The `perdir` argument is a tuple that specifies the directions to which periodic boundary conditions should be applied. Any number of directions may be defined as periodic, but in this example only the `i=1` direction is used allowing the flow to accelerate freely in this direction.
+
+### [Accelerating reference frame](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_SlowStartCircle.jl)
+
+![accelerating cylinder](examples/accelerating.gif)
+
+WaterLily gives the posibility to set up a `Simulation` using time-varying boundary conditions for the velocity field. This can be used to simulate a flow in an accelerating reference frame. The following example demonstrates how to set up a `Simulation` with a time-varying velocity field.
+```julia
+using WaterLily
+# define time-varying velocity boundary conditions
+Ut(i,t::T;a0=0.5) where T = i==1 ? convert(T, a0*t) : zero(T)
+# pass that to the function that creates the simulation
+sim = Simulation((256,256), Ut, 32)
+```
+The `Ut` function is used to define the time-varying velocity field. In this example, the velocity in the "x" direction is set to `a0*t` where `a0` is the acceleration of the reference frame. The `Simulation` function is then called with the `Ut` function as the second argument. The simulation will then run with the time-varying velocity field.
+
+
+### [Periodic and convective boundary conditions](https://github.com/weymouth/WaterLily.jl/blob/master/examples/TwoD_circle_periodicBC_convectiveBC.jl)
+
+![periodic cylinder](examples/periodic.gif)
+
+In addition to the standard free-slip (or reflective) boundary conditions, WaterLily also supports periodic boundary conditions. The following example demonstrates how to set up a `Simulation` with periodic boundary conditions in the `y`direction.
+
+```julia
+using WaterLily,StaticArrays
+
+# sdf an map for a moving circle in y-direction
+function sdf(x,t)
+    norm2(SA[x[1]-192,mod(x[2]-384,384)-192])-32
+end
+function map(x,t)
+    x.-SA[0.,t/2]
+end
+
+# make a body
+body = AutoBody(sdf, map)
+
+# y-periodic boundary conditions
+Simulation((512,384), (1,0), 32; body, perdir=(2,))
+```
+
+Additionally, the flag `exitBC=true` can be passed to the `Simulation` function to enable convective boundary conditions. This will apply a 1D convective exit in the __`x`__ direction (there is not way to change this at the moment). The `exitBC` flag is set to `false` by default.
+
+```julia
+using WaterLily
+
+# make a body
+body = AutoBody(sdf, map)
+
+# y-periodic boundary conditions
+Simulation((512,384), (1,0), 32; body, exitBC=true)
+```
+
+
+### [Writing to a VTK file](https://github.com/weymouth/WaterLily.jl/blob/master/examples/ThreeD_cylinder_vtk_restart.jl)
+
+The following example demonstrates how to write simulation data to a `.pvd` file using the `WriteVTK` package and the WaterLily `vtkwriter` function. The simples writer can be instantiated with
+
+```julia
+using WaterLily,WriteVTK
+
+# make a sim
+sim = make_sim(...)
+
+# make a writer
+writer = vtkwriter("simple_writer")
+
+# write the data
+write!(writer,sim)
+
+# don't forget to close the file
+close(writer)
+```
+This would write the velocity and pressure fields to a file named `simmple_writer.pvd`. The `vtkwriter` function can also take a dictionary of custom attributes to write to the file. For example, to write the body (sdf) and λ₂ fields to the file, you could use the following code:
+```julia
+using WaterLily,WriteVTK
+
+# make a writer with some attributes, need to output to CPU array to save file (|> Array)
+velocity(a::Simulation) = a.flow.u |> Array;
+pressure(a::Simulation) = a.flow.p |> Array;
+_body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body, WaterLily.time(a)); 
+                                     a.flow.σ |> Array;)
+lamda(a::Simulation) = (@inside a.flow.σ[I] = WaterLily.λ₂(I, a.flow.u);
+                        a.flow.σ |> Array;)
+                        
+# this maps what to write to the name in the file
+custom_attrib = Dict(
+    "Velocity" => velocity,
+    "Pressure" => pressure,
+    "Body" => _body,
+    "Lambda" => lamda
+)
+
+# make the writer
+writer = vtkWriter("advanced_writer"; attrib=custom_attrib)
+...
+close(writer)
+```
+The function that are passed to the `attrib` (custom attributes) must follow the same structure as what is shown in this example, that is, given a `Simulation`, return a N-dimensional (scalar or vector) field. The `vtkwriter` function will automatically write the data to a `.pvd` file, which can be read by Paraview. The prototype for the `vtkwriter` function is:
+```julia
+# prototype vtk writer function
+custom_vtk_function(a::Simulation) = ... |> Array
+```
+the `...` should be replaced with the code that generates the field you want to write to the file. The piping to a (CPU) `Array` is necessary to ensure that the data is written to the CPU before being written to the file for GPU simulations.
+
+
+### [Restarting from a VTK file](https://github.com/weymouth/WaterLily.jl/blob/master/examples/ThreeD_cylinder_vtk_restart.jl)
+
+This capability is very usefull to restart a simulation from a previous state. The `ReadVTK` package is used to read simulation data from a `.pvd` file. This `.pvd` __must__ have been writen with the `vtkwriter` function and __must__ contain at least the `velocity` and `pressure` fields. The following example demonstrates how to restart a simulation from a `.pvd` file using the `ReadVTK` package and the WaterLily `vtkreader` function
+```julia
+using WaterLily,ReadVTK
+sim = make_sim(...)
+# restart the simulation
+writer = restart_sim!(sim; fname="file_restart.pvd")
+
+# this acctually append the data to the file used to restart
+write!(writer, sim)
+
+# don't forget to close the file
+close(writer)
+```
+Internally, this function read the last file in the `.pvd` file and use that to set the `velocity` and `pressure` field in the simulation. The `sim_time` is also set to the last value saved in the `.pvd` file. The function also return a `vtkwriter` that will append the new data to the file used to restart the simulation. __Note__ the `sim` that will be filled must be identical to the one saved to the file for this restart to work, that is, the same size, same body, etc.
 
 ## Multi-threading and GPU backends
 
