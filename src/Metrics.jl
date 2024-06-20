@@ -88,3 +88,68 @@ end
     d,n,_ = measure(body,x,t)
     n*WaterLily.kern(clamp(d,-1,1))
 end
+
+# Turbulence statistics
+using JLD2
+
+"""
+     MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+
+Holds temporal averages of velocity, squared velocity, pressure, and Reynolds stresses.
+"""
+struct MeanFlow{T, Sf<:AbstractArray{T}, Vf<:AbstractArray{T}, Mf<:AbstractArray{T}}
+    P :: Sf # pressure scalar field
+    U :: Vf # velocity vector field
+    UU :: Mf # squared velocity tensor
+    τ :: Mf # Reynolds stress tensor
+    t :: Vector{T} # time
+    function MeanFlow(flow::Flow{D,T}; t_init=0.0) where {D,T}
+        f = typeof(flow.u).name.wrapper
+        P = zeros(T, size(flow.p)) |> f
+        U = zeros(T, size(flow.u)) |> f
+        UU = zeros(T, size(flow.p)...,D,D) |> f
+        τ = zeros(T, size(UU)) |> f
+        new{T,typeof(P),typeof(U),typeof(UU)}(P,U,UU,τ,T[t_init])
+    end
+end
+time(meanflow::MeanFlow) = meanflow.t[end]-meanflow.t[1]
+function reset!(meanflow::MeanFlow; t_init=0.0)
+    fill!(meanflow.P, 0); fill!(meanflow.U, 0); fill!(meanflow.UU, 0); fill!(meanflow.τ, 0)
+    deleteat!(meanflow.t, collect(1:length(meanflow.t)))
+    push!(meanflow.t, t_init)
+end
+function load!(meanflow::MeanFlow, fname::String; dir="data/")
+    obj = jldopen(dir*fname)
+    f = typeof(meanflow.U).name.wrapper
+    meanflow.P .= obj["P"] |> f
+    meanflow.U .= obj["U"] |> f
+    meanflow.UU .= obj["UU"] |> f
+    meanflow.τ .= obj["τ"] |> f
+    meanflow.t .= obj["t"]
+end
+write!(fname, meanflow::MeanFlow; dir="data/") = jldsave(
+    dir*fname*".jld2";
+    P=Array(meanflow.P),
+    U=Array(meanflow.U),
+    UU=Array(meanflow.UU),
+    τ=Array(meanflow.τ),
+    t=meanflow.t
+)
+
+function update!(meanflow::MeanFlow, flow::Flow; stats_turb=true)
+    dt = time(flow) - meanflow.t[end]
+    ε = dt / (dt + (meanflow.t[end] - meanflow.t[1]) + eps(eltype(flow.p)))
+    @loop meanflow.P[I] = ε*flow.p[I] + (1.0 - ε)*meanflow.P[I] over I in CartesianIndices(flow.p)
+    @loop meanflow.U[Ii] = ε*flow.u[Ii] + (1.0 - ε)*meanflow.U[Ii] over Ii in CartesianIndices(flow.u)
+    if stats_turb
+        for i in 1:ndims(flow.p), j in 1:ndims(flow.p)
+            @loop meanflow.UU[I,i,j] = ε*(flow.u[I,i].*flow.u[I,j]) + (1.0 - ε)*meanflow.UU[I,i,j] over I in CartesianIndices(flow.p)
+            @loop meanflow.τ[I,i,j] = meanflow.UU[I,i,j] - meanflow.U[I,i,j]*meanflow.U[I,i,j] over I in CartesianIndices(flow.p)
+        end
+    end
+    push!(meanflow.t, meanflow.t[end] + dt)
+end
+function copy!(a::Flow, b::MeanFlow)
+    a.u .= b.U
+    a.p .= b.P
+end
