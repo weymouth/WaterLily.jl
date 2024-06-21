@@ -134,15 +134,22 @@ export restart_sim!
 
 # Check number of threads when loading WaterLily
 """
-    check_nthreads(::Val{1})
+    check_nthreads()
 
 Check the number of threads available for the Julia session that loads WaterLily.
-A warning is shown when running in serial (JULIA_NUM_THREADS=1).
+A warning is shown when running in serial (JULIA_NUM_THREADS=1) with KernelAbstractions enabled.
 """
-check_nthreads(::Val{1}) = @warn("\nUsing WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because \
-    it disables the GPU backend and defaults to serial CPU."*
-    "\nUse JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU or GPU backends.")
-check_nthreads(_) = nothing
+function check_nthreads()
+    if backend == :KernelAbstractions && Threads.nthreads() == 1
+        @warn """
+            Using WaterLily in serial (ie. JULIA_NUM_THREADS=1) is not recommended because
+            it defaults to serial CPU execution."*
+            Use JULIA_NUM_THREADS=auto, or any number of threads greater than 1, to allow multi-threading in CPU backends.
+
+            For a low-overhead single-threaded CPU only backend set: `WaterLily.set_backend("SIMD")`
+        """
+    end
+end
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
@@ -155,7 +162,7 @@ function __init__()
         @require WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192" include("../ext/WaterLilyWriteVTKExt.jl")
         @require ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3" include("../ext/WaterLilyReadVTKExt.jl")
     end
-    check_nthreads(Val{Threads.nthreads()}())
+    check_nthreads()
 end
 
 end # module

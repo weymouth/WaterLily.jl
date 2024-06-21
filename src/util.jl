@@ -66,6 +66,20 @@ macro inside(ex)
     end |> esc
 end
 
+# Could also use ScopedValues in Julia 1.11+
+using Preferences
+const backend = Symbol(@load_preference("backend", "KernelAbstractions"))
+function set_backend(new_backend::String)
+    if !(new_backend in ("SIMD", "KernelAbstractions"))
+        throw(ArgumentError("Invalid backend: \"$(new_backend)\""))
+    end
+
+    # Set it in our runtime values, as well as saving it to disk
+    @set_preferences!("backend" => new_backend)
+    @info("New backend set; restart your Julia session for this change to take effect!")
+end
+
+
 """
     @loop <expr> over <I ∈ R>
 
@@ -100,7 +114,7 @@ macro loop(args...)
     setdiff!(sym,[I]) # don't want to pass I as an argument
     @gensym(kern, kern_) # generate unique kernel function names for serial and KA execution
     return quote
-        function $kern($(rep.(sym)...),::Val{1})
+        function $kern($(rep.(sym)...),::Val{:SIMD})
             @simd for $I ∈ $R
                 @fastmath @inbounds $ex
             end
@@ -110,10 +124,10 @@ macro loop(args...)
             $I += I0
             @fastmath @inbounds $ex
         end
-        function $kern($(rep.(sym)...),_)
-            $kern_(get_backend($(sym[1])),64)($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
+        function $kern($(rep.(sym)...),::Val{:KernelAbstractions})
+            $kern_(get_backend($(sym[1])))($(sym...),$R[1]-oneunit($R[1]),ndrange=size($R))
         end
-        $kern($(sym...),Val{Threads.nthreads()}()) # dispatch to SIMD for -t 1, or KA otherwise
+        $kern($(sym...),Val{$(QuoteNode(backend))}()) # dispatch to SIMD or KA otherwise
     end |> esc
 end
 function grab!(sym,ex::Expr)
