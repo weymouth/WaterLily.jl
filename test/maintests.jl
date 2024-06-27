@@ -25,6 +25,10 @@ using ReadVTK, WriteVTK
         @test inside(p,buff=0) == CartesianIndices(p)
         @test L₂(p) == 187
 
+        q = 2ones(Float32,4,5) |> f
+        @test isa(⋅(q,q), Float64)
+        @test ⋅(q,q) ≈ 80.0
+
         u = zeros(5,5,2) |> f
         apply!((i,x)->x[i],u)
         @test GPUArrays.@allowscalar [u[i,j,1].-(i-2) for i in 1:3, j in 1:3]==zeros(3,3)

@@ -48,6 +48,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
     levels :: Vector{Poisson{T,S,V}}
     n :: Vector{Int16}
     perdir :: NTuple # direction of periodic boundary condition
+    maxlevels :: Vector{Int16} # wrap in vector so it can be updated
     function MultiLevelPoisson(x::AbstractArray{T},L::AbstractArray{T},z::AbstractArray{T};maxlevels=Inf,perdir=()) where T
         levels = Poisson[Poisson(x,L,z;perdir)]
         while divisible(levels[end]) && length(levels) <= maxlevels
@@ -55,7 +56,7 @@ struct MultiLevelPoisson{T,S<:AbstractArray{T},V<:AbstractArray{T}} <: AbstractP
         end
         text = "MultiLevelPoisson requires size=a2ⁿ, where n>2"
         @assert (length(levels)>2) text
-        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir)
+        new{T,typeof(x),typeof(L)}(x,L,z,levels,[],perdir,[length(levels)])
     end
 end
 
@@ -74,7 +75,7 @@ function Vcycle!(ml::MultiLevelPoisson;l=1)
     restrict!(coarse.r,fine.r)
     fill!(coarse.x,0.)
     # solve coarse (with recursion if possible)
-    l+1<length(ml.levels) && Vcycle!(ml,l=l+1)
+    l+1<ml.maxlevels[1] && Vcycle!(ml,l=l+1)
     smooth!(coarse)
     # correct fine
     prolongate!(fine.ϵ,coarse.x)
@@ -86,7 +87,7 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
-    residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
+    residual!(p); r₂ = L∞(p)
     nᵖ=0
     while r₂>tol && nᵖ<itmx
         Vcycle!(ml)
@@ -94,7 +95,7 @@ function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
         nᵖ+=1
     end
     perBC!(p.x,p.perdir)
-    (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
-    (nᵖ>4 && divisible(ml.levels[end])) && push!(ml.levels,restrictML(ml.levels[end])) # add a level if this was hard
+    (nᵖ<2 && ml.maxlevels[1]>5) && (ml.maxlevels[1]-=1) # remove coarsest level if this was easy
+    (nᵖ>4 && ml.maxlevels[1]<length(ml.levels)) && (ml.maxlevels[1]+=1) # add a level if this was hard
     push!(ml.n,nᵖ);
 end

@@ -7,7 +7,7 @@ else
 end
 
 using WaterLily
-import WaterLily: L₂
+import WaterLily: ⋅, L₂
 
 """
     __init__()
@@ -18,6 +18,19 @@ __init__() = @assert AMDGPU.functional()
 
 AMDGPU.allowscalar(false) # disallow scalar operations on GPU
 
+"""
+    ⋅(a,b)
+
+Dot product of `a` and `b` `ROCArray`s reducing over a `Float64`.
+
+[NOT TESTED]
+"""
+function ⋅(a::ROCArray, b::ROCArray)
+    @assert size(a) == size(b) "`size(a)` and `size(b)` are not matching."
+    mapreduce(+, a, b) do x, y
+        promote_type(Float64,eltype(a))(x*y)
+    end
+end
 """
     L₂(a)
 

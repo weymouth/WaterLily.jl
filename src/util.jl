@@ -38,6 +38,20 @@ splitn(n) = Base.front(n),last(n)
 size_u(u) = splitn(size(u))
 
 """
+    ⋅(a,b)
+
+Dot product of `a` and `b` `Array`s reducing over a `Float64`.
+"""
+function ⋅(a, b)
+    @assert size(a) == size(b) "`size(a)` and `size(b)` are not matching."
+    s = zero(promote_type(Float64,eltype(a)))
+    @simd for i ∈ eachindex(a)
+        @inbounds s += a[i]*b[i]
+    end
+    s
+end
+
+"""
     L₂(a)
 
 L₂ norm of array `a` excluding ghosts.
