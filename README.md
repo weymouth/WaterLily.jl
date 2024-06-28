@@ -236,6 +236,24 @@ close(writer)
 ```
 Internally, this function reads the last file in the `.pvd` file and use that to set the `velocity` and `pressure` fields in the simulation. The `sim_time` is also set to the last value saved in the `.pvd` file. The function also returns a `vtkwriter` that will append the new data to the file used to restart the simulation. __Note__ the `sim` that will be filled must be identical to the one saved to the file for this restart to work, that is, the same size, same body, etc.
 
+### List of other examples
+#### 3D
+- [3D Taylor-Green vortex break down](examples/ThreeD_TaylorGreenVortex.jl)
+- [3D donut flow, using the GPU and Makie for live rendering](examples/ThreeD_donut.jl)
+- [3D jellyfish, using the GPU and Makie for live rendering](examples/ThreeD_jelly.jl)
+#### 2D
+- [2D flow around a flapping plate](examples/TwoD_hover.jl)
+- [2D flow around the Julia logo](examples/TwoD_Julia.jl)
+- [2D flow around multiple cylinders using the AutoBodies](examples/TwoD_MultipleBodies.jl)
+- [2D flow around a circle with oscillating body force](examples/TwoD_oscillatingFlowOverCircle.jl)
+- [2D flow around cylinder in an accelerating frame of reference using time-dependent boundary conditions](examples/TwoD_SlowStartCircle.jl)
+- [2D flow around a square using AutoBodies set operations](examples/TwoD_Square.jl)
+- [2D flow around a triangle with a custom sdf](examples/TwoD_Triangle.jl)
+- [2D flow around a cylinder fully in the terminal](examples/TwoD_UnicodePlots.jl)
+- [2D flow around a cylinder in 1DOF vortex-induced-vibration](examples/TwoD_cylinderVIV.jl)
+- [2D Lid-driven cavity flow (show how to overwrite BC! function)](examples/TwoD_LidCavity.jl)
+
+
 ## Multi-threading and GPU backends
 
 WaterLily uses [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl) to multi-thread on CPU and run on GPU backends. The implementation method and speed-up are documented in our [ParCFD abstract](https://arxiv.org/abs/2304.08159). In summary, a single macro `WaterLily.@loop` is used for nearly every loop in the code base, and this uses KernelAbstractactions to generate optimized code for each back-end. The speed-up is more pronounce for large simulations, and we've [benchmarked](benchmark/donut/donut.jl) up to 23x-speed up on a Intel Core i7-10750H x6 processor, and 182x speed-up NVIDIA GeForce GTX 1650 Ti GPU card.
