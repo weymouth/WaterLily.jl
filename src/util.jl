@@ -1,4 +1,20 @@
 using KernelAbstractions: get_backend, @index, @kernel
+using LoggingExtras
+
+"""
+    logger(fname="WaterLily")
+
+Set up a logger to write the pressure solver data to a logging file named `WaterLily.log`.
+"""
+function logger(fname::String="WaterLily")
+    ENV["JULIA_DEBUG"] = all
+    logger = FormatLogger(ifelse(fname[end-3:end]==".log",fname[1:end-4],fname)*".log"; append=false) do io, args
+        (args.level <= Logging.Debug && args.message[1:2]=="ml" ) && print(io, args.message[3:end])
+    end;
+    global_logger(logger);
+    # put header file
+    @debug "mlp/c, iter, r∞, r₂\n"
+end
 
 @inline CI(a...) = CartesianIndex(a...)
 """

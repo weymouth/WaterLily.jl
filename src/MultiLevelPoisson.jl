@@ -86,12 +86,13 @@ residual!(ml::MultiLevelPoisson,x) = residual!(ml.levels[1],x)
 
 function solver!(ml::MultiLevelPoisson;tol=2e-4,itmx=32)
     p = ml.levels[1]
-    residual!(p); r₀ = r₂ = L∞(p); r₂₀ = L₂(p)
-    nᵖ=0
-    while r₂>tol && nᵖ<itmx
+    residual!(p); r∞ = L∞(p)
+    nᵖ=0; @debug "ml, $nᵖ, $r∞, $(L₂(p))\n"
+    while r∞>tol && nᵖ<itmx
         Vcycle!(ml)
-        smooth!(p); r₂ = L∞(p)
+        smooth!(p); r∞ = L∞(p)
         nᵖ+=1
+        @debug "ml, $nᵖ, $r∞, $(L₂(p))\n"
     end
     perBC!(p.x,p.perdir)
     (nᵖ<2 && length(ml.levels)>5) && pop!(ml.levels); # remove coarsest level if this was easy
