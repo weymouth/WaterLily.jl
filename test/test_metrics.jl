@@ -38,6 +38,7 @@ import WaterLily: ×
         body = AutoBody((x,t)->√sum(abs2,x.-(N/2))-N÷4,(x,t)->x)
         force = WaterLily.pressure_force(p,df₂,body)
         @test sum(abs,force/(π*(N/4)^2) - [0,1]) < 2e-3
+        @test WaterLily.pressure_force(p,df₂,body;Ts=Float32) ≈ force # Float64 fields still accumulate in Float64
         # stress tensor
         u₂ = zeros(N,N,2) |> f
         u₃ = zeros(N,N,N,3) |> f

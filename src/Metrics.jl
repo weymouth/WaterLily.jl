@@ -119,14 +119,15 @@ BDIM-masked surface normal.
 end
 
 """
-    pressure_force(sim)
+    pressure_force(sim; Ts=Float64)
 
 Compute the pressure force on an immersed body.
+`Ts` is the accumulation type of the surface integral (promoted with the field type); Metal needs `Ts=Float32`.
 """
-pressure_force(sim) = pressure_force(sim.flow,sim.body)
-pressure_force(flow,body) = pressure_force(flow.p,flow.f,body,time(flow))
-function pressure_force(p,df,body,t=0)
-    Tp = eltype(p); To = promote_type(Float64,Tp)
+pressure_force(sim; Ts=Float64) = pressure_force(sim.flow,sim.body; Ts)
+pressure_force(flow,body; Ts=Float64) = pressure_force(flow.p,flow.f,body,time(flow); Ts)
+function pressure_force(p,df,body,t=0;Ts=Float64)
+    Tp = eltype(p); To = promote_type(Ts,Tp)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*nds(body,loc(0,I,Tp),t) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
@@ -140,61 +141,66 @@ Rate-of-strain tensor.
 @inline S(I::CartesianIndex{D},u) where D = SMatrix{D,D}((∂(i,j,I,u)+∂(j,i,I,u))/2 for i ∈ 1:D, j ∈ 1:D)
 
 """
-    viscous_force(sim)
+    viscous_force(sim; Ts=Float64)
 
 Compute the viscous force on an immersed body.
+`Ts` is the accumulation type of the surface integral (promoted with the field type); Metal needs `Ts=Float32`.
 """
-viscous_force(sim) = viscous_force(sim.flow,sim.body)
-viscous_force(flow,body) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow))
-function viscous_force(u,ν,df,body,t=0)
-    Tu = eltype(u); To = promote_type(Float64,Tu)
+viscous_force(sim; Ts=Float64) = viscous_force(sim.flow,sim.body; Ts)
+viscous_force(flow,body; Ts=Float64) = viscous_force(flow.u,flow.ν,flow.f,body,time(flow); Ts)
+function viscous_force(u,ν,df,body,t=0;Ts=Float64)
+    Tu = eltype(u); To = promote_type(Ts,Tu)
     df .= zero(Tu)
     @loop df[I,:] .= -2ν*S(I,u)*nds(body,loc(0,I,Tu),t) over I ∈ inside_u(u)
     sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
 """
-    total_force(sim)
+    total_force(sim; Ts=Float64)
 
 Compute the total force on an immersed body.
+`Ts` is the accumulation type of the surface integral (promoted with the field type); Metal needs `Ts=Float32`.
 """
-total_force(sim) = pressure_force(sim) .+ viscous_force(sim)
+total_force(sim; Ts=Float64) = pressure_force(sim; Ts) .+ viscous_force(sim; Ts)
 
 using LinearAlgebra: cross
 """
-    pressure_moment(x₀,sim)
+    pressure_moment(x₀,sim; Ts=Float64)
 
 Computes the pressure moment on an immersed body relative to point x₀.
+`Ts` is the accumulation type of the surface integral (promoted with the field type); Metal needs `Ts=Float32` and a `Float32` `x₀`.
 """
-pressure_moment(x₀,sim) = pressure_moment(x₀,sim.flow,sim.body)
-pressure_moment(x₀,flow,body) = pressure_moment(x₀,flow.p,flow.f,body,time(flow))
-function pressure_moment(x₀,p,df,body,t=0)
-    Tp = eltype(p); To = promote_type(Float64,Tp)
+pressure_moment(x₀,sim; Ts=Float64) = pressure_moment(x₀,sim.flow,sim.body; Ts)
+pressure_moment(x₀,flow,body; Ts=Float64) = pressure_moment(x₀,flow.p,flow.f,body,time(flow); Ts)
+function pressure_moment(x₀,p,df,body,t=0;Ts=Float64)
+    Tp = eltype(p); To = promote_type(Ts,Tp)
     df .= zero(Tp)
     @loop df[I,:] .= p[I]*cross(loc(0,I,Tp)-x₀,nds(body,loc(0,I,Tp),t)) over I ∈ inside(p)
     sum(To,df,dims=ntuple(i->i,ndims(p)))[:] |> Array
 end
 
 """
-    viscous_moment(x₀,sim)
+    viscous_moment(x₀,sim; Ts=Float64)
 
 Computes the viscous moment on an immersed body relative to point x₀.
+`Ts` is the accumulation type of the surface integral (promoted with the field type); Metal needs `Ts=Float32` and a `Float32` `x₀`.
 """
-viscous_moment(x₀,sim) = viscous_moment(x₀,sim.flow,sim.body)
-viscous_moment(x₀,flow,body) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow))
-function viscous_moment(x₀,u,ν,df,body,t=0)
-    Tu = eltype(u); To = promote_type(Float64,Tu)
+viscous_moment(x₀,sim; Ts=Float64) = viscous_moment(x₀,sim.flow,sim.body; Ts)
+viscous_moment(x₀,flow,body; Ts=Float64) = viscous_moment(x₀,flow.u,flow.ν,flow.f,body,time(flow); Ts)
+function viscous_moment(x₀,u,ν,df,body,t=0;Ts=Float64)
+    Tu = eltype(u); To = promote_type(Ts,Tu)
     df .= zero(Tu)
     @loop df[I,:] .= -2ν*cross(loc(0,I,Tu)-x₀,S(I,u)*nds(body,loc(0,I,Tu),t)) over I ∈ inside_u(u)
     sum(To,df,dims=ntuple(i->i,ndims(u)-1))[:] |> Array
 end
 
 """
-    total_moment(x₀,sim)
+    total_moment(x₀,sim; Ts=Float64)
 
 Computes the total (pressure + viscous) moment on an immersed body relative to point x₀.
+`Ts` is the accumulation type of the surface integral (promoted with the field type); Metal needs `Ts=Float32` and a `Float32` `x₀`.
 """
-total_moment(x₀,sim) = pressure_moment(x₀,sim) .+ viscous_moment(x₀,sim)
+total_moment(x₀,sim; Ts=Float64) = pressure_moment(x₀,sim; Ts) .+ viscous_moment(x₀,sim; Ts)
 
 
 """

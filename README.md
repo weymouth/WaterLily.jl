@@ -112,9 +112,9 @@ Note that multi-threading requires _starting_ Julia with the `--threads` argumen
 
 Running on a GPU requires initializing the `Simulation` memory on the GPU, and care needs to be taken to move the data back to the CPU for visualization. As an example, let's compare a **3D** GPU simulation of a sphere to the **2D** multi-threaded CPU circle defined above
 ```Julia
-using CUDA,WaterLily
+using CUDA,WaterLily           # or `using Metal,WaterLily` on Apple GPUs
 function sphere(n,m;Re=100,U=1,T=Float64,mem=Array)
-    radius, center = m/8, m/2-1
+    radius, center = T(m/8), T(m/2-1) # keep constants in T (required on Metal)
     body = AutoBody((x,t)->√sum(abs2, x .- center) - radius)
     Simulation((n,m,m),(U,0,0), # 3D array size and BCs
                 2radius;ν=U*2radius/Re,body, # no change
@@ -122,19 +122,22 @@ function sphere(n,m;Re=100,U=1,T=Float64,mem=Array)
                 mem) # memory type
 end
 
-@assert CUDA.functional()      # is your CUDA GPU working??
-GPUsim = sphere(3*2^5,2^6;T=Float32,mem=CuArray); # 3D GPU sim!
+@assert CUDA.functional()      # is your CUDA GPU working?? (Metal.functional() on Apple)
+GPUsim = sphere(3*2^5,2^6;T=Float32,mem=CuArray); # 3D GPU sim! (mem=MtlArray on Apple)
 println(length(GPUsim.flow.u)) # 1.3M degrees-of freedom!
 sim_step!(GPUsim)              # compile GPU code & run one step
-@time sim_step!(GPUsim,50,remeasure=false) # 40s!!
+@time sim_step!(GPUsim,50,remeasure=false) # 40s!! (51s on an Apple M1 Max with Metal)
+WaterLily.pressure_force(GPUsim;Ts=Float32) # force on the sphere (Ts=Float32 required on Metal)
 
 CPUsim = circle(3*2^5,2^6);    # 2D CPU sim
 println(length(CPUsim.flow.u)) # 0.013M degrees-of freedom!
-sim_step!(CPUsim)              # compile GPU code & run one step
+sim_step!(CPUsim)              # compile CPU code & run one step
 println(Threads.nthreads())    # I'm using 8 threads
-@time sim_step!(CPUsim,50,remeasure=false) # 28s!!
+@time sim_step!(CPUsim,50,remeasure=false) # 28s!! (17s on an Apple M1 Max)
 ```
-As you can see, the 3D sphere set-up is almost identical to the 2D circle, but using 3D arrays means there are almost 1.3M degrees-of-freedom, 100x bigger than in 2D. Never the less, the simulation is quite fast on the GPU, only around 40% slower than the much smaller 2D simulation on a CPU with 8 threads. See the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
+As you can see, the 3D sphere set-up is almost identical to the 2D circle, but using 3D arrays means there are almost 1.3M degrees-of-freedom, 100x bigger than in 2D. Never the less, the simulation is quite fast on the GPU, only around 40% slower than the much smaller 2D simulation on a CPU with 8 threads (around 190% slower on an Apple M1 Max with Metal). See the [2024 paper](https://physics.paperswithcode.com/paper/waterlily-jl-a-differentiable-and-backend) and the [examples repo](https://github.com/WaterLily-jl/WaterLily-Examples) for many more non-trivial examples including running on AMD GPUs.
+
+The same example runs on Apple GPUs via `using Metal` and `mem=MtlArray`, with one restriction: Metal has no Float64. Use `T=Float32` and make sure nothing that reaches the kernels is Float64. That is why `sphere` casts its constants with `T(...)`, and why the reference point `x₀` of the moment functions must be Float32 too. The force and moment integrals are accumulated in Float64 by default, so on Metal pass `Ts=Float32` as in the example.
 
 Finally, KernelAbstractions does incur some CPU allocations for every loop, but other than this `sim_step!` is completely non-allocating. This is one reason why the speed-up improves as the size of the simulation increases.
 
